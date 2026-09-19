@@ -1,10 +1,31 @@
-
 // ============================================
 // 1. ИНИЦИАЛИЗАЦИЯ VK MINI APP
 // ============================================
 vkBridge.send("VKWebAppInit", {});
+
+// Безопасная инициализация плеера — VK.VideoPlayer может быть ещё не готов
+let player = null;
+try {
+  const iframe = document.getElementById('vkVideo');
+  if (typeof VK !== 'undefined' && VK.VideoPlayer) {
+    player = VK.VideoPlayer(iframe);
+  } else {
+    console.warn('VK.VideoPlayer не загружен. Проверьте подключение videoplayer.js');
+  }
+} catch (e) {
+  console.warn('Не удалось создать плеер:', e);
+}
+
 // ============================================
-// 2. ПРОСТОЙ РЕЦЕПТ (в будущем — из вашей БД)
+// 2. РЕЖИМЫ РАБОТЫ
+// ============================================
+const MODE_TEXT = 'text';    // Листаем текстовый рецепт
+const MODE_VIDEO = 'video';  // Перематываем видео
+
+let currentMode = MODE_TEXT;
+
+// ============================================
+// 3. ДАННЫЕ РЕЦЕПТА
 // ============================================
 const recipe = {
   steps: [
@@ -17,50 +38,85 @@ const recipe = {
   ingredients: ['Макароны 200 г', 'Вода 2 л', 'Соус томатный 150 г', 'Сыр пармезан 50 г']
 };
 
+// Тайм-коды для видео (в миллисекундах) — задайте вручную
+const timestamps = [
+  0,        // Шаг 1
+  15000,    // Шаг 2
+  45000,    // Шаг 3
+  78000,    // Шаг 4
+  120000    // Шаг 5
+];
+
 let currentStepIndex = 0;
 
-// DOM-элементы
+// ============================================
+// 4. DOM-ЭЛЕМЕНТЫ
+// ============================================
 const stepDisplay = document.getElementById('recipe-step');
 const micButton = document.getElementById('mic-button');
 const statusDisplay = document.getElementById('status');
+const modeDisplay = document.getElementById('mode-display'); // опционально
 
 // ============================================
-// 3. ФУНКЦИЯ ОБНОВЛЕНИЯ ЭКРАНА
+// 5. ОТОБРАЖЕНИЕ
 // ============================================
 function updateDisplay() {
   stepDisplay.textContent = recipe.steps[currentStepIndex];
-  statusDisplay.textContent = `Шаг ${currentStepIndex + 1} из ${recipe.steps.length}`;
+  statusDisplay.textContent =
+    `Шаг ${currentStepIndex + 1} из ${recipe.steps.length} | Режим: ${currentMode === MODE_TEXT ? '📖 Текст' : '🎬 Видео'}`;
+}
+
+// ============================================
+// 6. ПЕРЕКЛЮЧЕНИЕ ШАГА (единая точка входа)
+// ============================================
+function changeStep(newIndex) {
+  if (newIndex < 0 || newIndex >= recipe.steps.length) {
+    speak(newIndex < 0 ? 'Это первый шаг.' : 'Это последний шаг.');
+    return;
+  }
+  
+  currentStepIndex = newIndex;
+  
+  // В видеорежиме — перематываем видео
+  if (currentMode === MODE_VIDEO && player && timestamps[currentStepIndex] !== undefined) {
+    try {
+      player.seekTo(timestamps[currentStepIndex]);
+    } catch (e) {
+      console.warn('Не удалось перемотать видео:', e);
+    }
+  }
+  
+  updateDisplay();
+  speak(recipe.steps[currentStepIndex]);
 }
 
 function goToNextStep() {
-  if (currentStepIndex < recipe.steps.length - 1) {
-    currentStepIndex++;
-    updateDisplay();
-    speak(recipe.steps[currentStepIndex]); // Озвучиваем новый шаг
-    return true;
-  }
-  speak('Это последний шаг рецепта.');
-  return false;
+  changeStep(currentStepIndex + 1);
 }
 
 function goToPrevStep() {
-  if (currentStepIndex > 0) {
-    currentStepIndex--;
-    updateDisplay();
-    speak(recipe.steps[currentStepIndex]);
-    return true;
-  }
-  speak('Это первый шаг рецепта.');
-  return false;
+  changeStep(currentStepIndex - 1);
 }
 
 // ============================================
-// 4. ОЗВУЧИВАНИЕ (TTS через SpeechSynthesis)
+// 7. ПЕРЕКЛЮЧЕНИЕ РЕЖИМОВ
+// ============================================
+function switchMode(mode) {
+  currentMode = mode;
+  updateDisplay();
+  
+  if (mode === MODE_VIDEO) {
+    speak('Режим видео. Команды дальше и назад перематывают видео.');
+  } else {
+    speak('Текстовый режим.');
+  }
+}
+
+// ============================================
+// 8. ОЗВУЧИВАНИЕ (TTS)
 // ============================================
 function speak(text) {
   if (!('speechSynthesis' in window)) return;
-  
-  // Прерываем предыдущее воспроизведение, чтобы не было очереди
   window.speechSynthesis.cancel();
   
   const utterance = new SpeechSynthesisUtterance(text);
@@ -70,7 +126,7 @@ function speak(text) {
 }
 
 // ============================================
-// 5. РАСПОЗНАВАНИЕ РЕЧИ (Web Speech API)
+// 9. РАСПОЗНАВАНИЕ РЕЧИ
 // ============================================
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -80,33 +136,27 @@ let isListening = false;
 if (SpeechRecognition) {
   recognition = new SpeechRecognition();
   recognition.lang = 'ru-RU';
-  recognition.continuous = true;         // Слушаем непрерывно
-  recognition.interimResults = false;    // Нас интересуют только финальные фразы
+  recognition.continuous = true;
+  recognition.interimResults = false;
   recognition.maxAlternatives = 1;
   
-  // Обработка результата
-  recognition.onresult = async (event) => {
+  recognition.onresult = (event) => {
     const lastIndex = event.results.length - 1;
-    const transcript = event.results[lastIndex][0].transcript
-      .toLowerCase()
-      .trim();
+    const transcript = event.results[lastIndex][0].transcript.toLowerCase().trim();
     
     console.log('Распознано:', transcript);
     statusDisplay.textContent = `Услышано: "${transcript}"`;
     
-    // Локальная обработка команды (дублирование серверной логики)
     handleCommandLocally(transcript);
   };
   
   recognition.onerror = (event) => {
     console.warn('Ошибка распознавания:', event.error);
-    // Игнорируем «тишину», чтобы не спамить пользователя
     if (event.error !== 'no-speech' && event.error !== 'aborted') {
       statusDisplay.textContent = `Ошибка: ${event.error}`;
     }
   };
   
-  // ВАЖНО: авто-перезапуск, так как браузер сам останавливает сессию
   recognition.onend = () => {
     if (isListening) {
       try {
@@ -117,26 +167,26 @@ if (SpeechRecognition) {
     }
   };
 } else {
-  statusDisplay.textContent = 'Ваш браузер не поддерживает распознавание речи.';
+  statusDisplay.textContent = 'Браузер не поддерживает распознавание речи.';
   micButton.disabled = true;
 }
 
-// Получаем ID пользователя через VK Bridge
-async function getUserId() {
-  try {
-    const userInfo = await bridge.send('VKWebAppGetUserInfo');
-    return userInfo.id;
-  } catch (e) {
-    console.warn('Не удалось получить ID пользователя:', e);
-    return null;
-  }
-}
-
 // ============================================
-// 7. ЛОКАЛЬНАЯ ОБРАБОТКА КОМАНД
+// 10. ОБРАБОТКА ГОЛОСОВЫХ КОМАНД
 // ============================================
 function handleCommandLocally(text) {
-  // Команды «вперёд»
+  // --- Переключение режимов ---
+  if (text.includes('видео') || text.includes('включи видео')) {
+    switchMode(MODE_VIDEO);
+    return;
+  }
+  
+  if (text.includes('текст') || text.includes('текстовый режим')) {
+    switchMode(MODE_TEXT);
+    return;
+  }
+  
+  // --- Навигация (работает в обоих режимах) ---
   if (
     text.includes('дальше') ||
     text.includes('следующий') ||
@@ -147,7 +197,6 @@ function handleCommandLocally(text) {
     return;
   }
   
-  // Команды «назад»
   if (
     text.includes('назад') ||
     text.includes('предыдущий') ||
@@ -157,7 +206,7 @@ function handleCommandLocally(text) {
     return;
   }
   
-  // Озвучивание ингредиентов
+  // --- Ингредиенты ---
   if (text.includes('ингредиент') || text.includes('состав')) {
     const list = 'Ингредиенты: ' + recipe.ingredients.join(', ');
     speak(list);
@@ -165,35 +214,32 @@ function handleCommandLocally(text) {
     return;
   }
   
-  // Повторить текущий шаг
+  // --- Повтор шага ---
   if (text.includes('повтори') || text.includes('ещё раз') || text.includes('еще раз')) {
     speak(recipe.steps[currentStepIndex]);
     return;
   }
   
-  // Озвучивание текущего шага по запросу
+  // --- Прочитать шаг ---
   if (text.includes('прочитай') || text.includes('зачитай')) {
     speak(recipe.steps[currentStepIndex]);
   }
 }
 
 // ============================================
-// 8. УПРАВЛЕНИЕ КНОПКОЙ МИКРОФОНА
+// 11. УПРАВЛЕНИЕ МИКРОФОНОМ
 // ============================================
 micButton.addEventListener('click', async () => {
   if (!recognition) return;
   
   if (isListening) {
-    // Останавливаем
     isListening = false;
     recognition.stop();
     micButton.textContent = '🎤 Слушать';
     statusDisplay.textContent = 'Прослушивание остановлено';
   } else {
-    // Запускаем
-    // Небольшая тактильная отдача через VK Bridge (опционально)
     try {
-      await bridge.send('VKWebAppTapticImpactOccurred', { style: 'light' });
+      await vkBridge.send('VKWebAppTapticImpactOccurred', { style: 'light' });
     } catch (e) {}
     
     isListening = true;
@@ -204,7 +250,7 @@ micButton.addEventListener('click', async () => {
 });
 
 // ============================================
-// 9. ЗАЩИТА ОТ ЗАСЫПАНИЯ ЭКРАНА (мобильные)
+// 12. WAKE LOCK (защита от засыпания экрана)
 // ============================================
 let wakeLock = null;
 
@@ -218,12 +264,10 @@ async function requestWakeLock() {
   }
 }
 
-// Запрашиваем Wake Lock, когда начинаем слушать
 micButton.addEventListener('click', () => {
   if (isListening) requestWakeLock();
 });
 
-// Освобождаем при сворачивании страницы
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState === 'visible' && isListening) {
     requestWakeLock();
@@ -231,6 +275,6 @@ document.addEventListener('visibilitychange', async () => {
 });
 
 // ============================================
-// 10. СТАРТОВАЯ ИНИЦИАЛИЗАЦИЯ
+// 13. СТАРТ
 // ============================================
 updateDisplay();
