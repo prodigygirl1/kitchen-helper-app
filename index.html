@@ -4,7 +4,21 @@
   <div id="recipe-step">Нажмите на микрофон, чтобы начать</div>
   
   <button id="mic-button">🎤 Слушать</button>
+  
+  <iframe 
+    id="vkVideo"
+    src="https://vk.com/video_ext.php?oid=-98992477&id=456242575&hd=2&js_api=1"
+    width="100%" 
+    style="aspect-ratio: 16/9; border: none;"
+    allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+    allowfullscreen>
+  </iframe>
+  
   <div id="status">Статус: ожидание</div>
 </div>
+
 <script src="https://unpkg.com/@vkontakte/vk-bridge/dist/browser.min.js"></script>
+
+<script src="https://vk.com/js/api/videoplayer.js"></script>
+
 <script type="module" src="./main.js"></script>
