@@ -96,9 +96,6 @@ if (SpeechRecognition) {
     console.log('Распознано:', transcript);
     statusDisplay.textContent = `Услышано: "${transcript}"`;
     
-    // Отправляем на сервер (заглушка)
-    await sendVoiceToServer(transcript);
-    
     // Локальная обработка команды (дублирование серверной логики)
     handleCommandLocally(transcript);
   };
@@ -124,36 +121,6 @@ if (SpeechRecognition) {
 } else {
   statusDisplay.textContent = 'Ваш браузер не поддерживает распознавание речи.';
   micButton.disabled = true;
-}
-
-// ============================================
-// 6. ОТПРАВКА НА СЕРВЕР
-// ============================================
-async function sendVoiceToServer(text) {
-  try {
-    // ЗАМЕНИТЕ этот URL на адрес вашего бэкенда
-    const response = await fetch('https://your-server.com/api/voice-command', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        command: text,
-        recipeId: 'recipe-001',       // ID текущего рецепта
-        currentStep: currentStepIndex,
-        userId: await getUserId()      // Получаем ID пользователя VK
-      })
-    });
-    
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    
-    const data = await response.json();
-    console.log('Ответ сервера:', data);
-    return data;
-  } catch (error) {
-    console.error('Ошибка отправки на сервер:', error);
-    // Не блокируем работу — обрабатываем локально
-  }
 }
 
 // Получаем ID пользователя через VK Bridge
