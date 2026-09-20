@@ -8,7 +8,7 @@ let player = null;
 try {
   const iframe = document.getElementById('vkVideo');
   if (typeof VK !== 'undefined' && VK.VideoPlayer) {
-    player = VK.VideoPlayer(iframe);
+    // player = VK.VideoPlayer(iframe);
   } else {
     console.warn('VK.VideoPlayer не загружен. Проверьте подключение videoplayer.js');
   }
